@@ -5,10 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>日本百大名城・續百大名城地圖</title>
 
-    <!-- Leaflet（使用 jsDelivr，較不易被公司網路擋） -->
+    <!-- Leaflet（jsDelivr） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 
-    <!-- 內嵌必要樣式：即使外部 CSS 沒載到也能看到地圖 -->
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; font-family: system-ui, -apple-system, "Noto Sans TC", Arial; color: #222; }
@@ -22,8 +21,6 @@
       .layer-toggle { position: absolute; right: 12px; top: 70px; background: rgba(255,255,255,0.95); border: 1px solid #eee; border-radius: 10px; padding: 8px 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06); }
       label { display: block; margin: 4px 0; }
       .foot { padding: 10px 14px; font-size: 12px; color: #666; border-top: 1px solid #eee; background: #fff; }
-
-      /* 自訂圓點樣式（使用 DivIcon） */
       .leaflet-div-icon { background: transparent; border: none; }
       .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
       .marker-100 { background: #0b6efd; }
@@ -51,88 +48,120 @@
       地圖資料 © OpenStreetMap 貢獻者 ｜ Tiles by OSM ｜ Powered by Leaflet
     </footer>
 
-    <!-- Leaflet JS -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- 主程式（含：鎖定日本 + 遮罩挖洞） -->
     <script>
-      // --- 基本設定 ---
+      // ===== 基本設定 =====
       const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
       const DATA_URL = "./data/castles.json";
+      // 請在 data/ 目錄放入日本國界 GeoJSON（Polygon 或 MultiPolygon）
+      const JP_BOUNDARY_URL = "./data/japan-boundary.geojson";
 
-      // 日本邊界框（約略涵蓋沖繩～北海道）
-      // 格式：[南緯/西經], [北緯/東經]
+      // 鎖定範圍（約略含沖繩與北海道）
       const JP_BOUNDS = L.latLngBounds([24, 122], [46, 154]);
 
-      // 安全檢查：若 Leaflet 沒載到，顯示提示
-      if (typeof L === 'undefined') {
-        alert('Leaflet 沒載到（公司網路可能擋 CDN）。請改用 jsDelivr 或換網路重試。');
+      if (typeof L === "undefined") {
+        alert("Leaflet 沒載到（可能被公司網路擋）。請改用 jsDelivr 或換網路重試。");
       }
 
       // 建立地圖
       const map = L.map("map", {
         zoomControl: true,
-        worldCopyJump: false // 不要在換日線複製世界
+        worldCopyJump: false
       }).setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
 
-      // 把地圖「鎖在日本」
-      map.setMinZoom(5);                    // 不讓縮得太小（避免看到大量周邊國家）
-      map.setMaxBounds(JP_BOUNDS);          // 不讓拖出邊界
-      map.options.maxBoundsViscosity = 1.0; // 黏性：拖到邊緣彈回
+      // 鎖定日本
+      map.setMinZoom(5);
+      map.setMaxBounds(JP_BOUNDS);
+      map.options.maxBoundsViscosity = 1.0;
 
-      // OSM 圖磚（避免世界橫向重複）
+      // OSM 圖磚
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
         noWrap: true,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       }).addTo(map);
 
-      // ===== 方案B：外部遮罩（矩形挖洞版） =====
-      // 用「世界大矩形」作外環，內環用 JP_BOUNDS 形成『甜甜圈』，把日本框外都上半透明。
-      // 注意：此為「矩形挖洞」，不是沿日本國界；優點是零額外檔案、性能好。
-      (function addOutsideMask() {
-        // 外環：整個世界（[lng, lat]）
+      // ===== 方案B：沿日本國界挖洞，外側覆蓋淺藍色 =====
+      // 流程：讀入日本國界（Polygon/MultiPolygon）→ 收集每個外環 ring → 用 world 外環 + 這些 ring 作為「洞」→ 以 evenodd 規則繪製
+      fetch(JP_BOUNDARY_URL).then(r => {
+        if (!r.ok) throw new Error("找不到 data/japan-boundary.geojson");
+        return r.json();
+      }).then(geo => {
+        const holes = collectJapanOuterRings(geo); // 回傳多個 ring（Array<Array<[lng,lat]>>>）
+
+        // 世界外環（經緯度順序）
         const worldRing = [
           [-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]
         ];
-        // 內環：用 JP_BOUNDS 的矩形（[lng, lat]）
-        const sw = JP_BOUNDS.getSouthWest(); // (lat, lng)
-        const ne = JP_BOUNDS.getNorthEast();
-        const innerRing = [
-          [sw.lng, sw.lat],
-          [sw.lng, ne.lat],
-          [ne.lng, ne.lat],
-          [ne.lng, sw.lat],
-          [sw.lng, sw.lat]
-        ];
 
         const mask = {
-          "type": "Feature",
-          "properties": {},
-          "geometry": {
-            "type": "Polygon",
-            // GeoJSON 多環：第一個是外環，其後是「挖洞」的內環
-            "coordinates": [ worldRing, innerRing ]
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            // 第一個是外環（整個世界），其後每個 ring 會被視為「內洞」（不填色）
+            coordinates: [worldRing, ...holes]
           }
         };
 
         L.geoJSON(mask, {
           style: {
-            color: "#00000000",              // 無邊線
-            fillColor: "rgba(0,0,0,0.25)",   // 外部半透明變暗
+            color: "#00000000",               // 邊線透明
+            fillColor: "rgba(216,238,252,0.92)", // 淺藍色（海感），外側覆蓋
             fillOpacity: 1,
-            // 關鍵：偶奇規則，讓內環變成挖洞（內部不填色）
-            fillRule: "evenodd"
+            fillRule: "evenodd"               // 偶奇規則：內環挖洞
           },
-          interactive: false // 遮罩不攔截滑鼠事件
+          interactive: false                  // 不阻擋互動
         }).addTo(map);
-      })();
+      }).catch(err => {
+        console.error(err);
+        // 若國界檔缺失，地圖仍可用，只是沒有外側淺藍遮罩
+      });
 
-      // 圖層群組（百名城 / 續百名城）
+      // 將 GeoJSON（Polygon 或 MultiPolygon）提取每個「外環 ring」（線性環座標，順序為 [lng, lat]）
+      function collectJapanOuterRings(geojson) {
+        const rings = [];
+        const feats = geojson.type === "FeatureCollection"
+          ? geojson.features
+          : geojson.type === "Feature"
+            ? [geojson]
+            : [{ type: "Feature", geometry: geojson }];
+
+        for (const f of feats) {
+          const g = f.geometry;
+          if (!g) continue;
+          if (g.type === "Polygon") {
+            // Polygon: coordinates = [outerRing, hole1, hole2, ...]
+            if (g.coordinates && g.coordinates[0]) {
+              rings.push(normalizeRing(g.coordinates[0]));
+            }
+          } else if (g.type === "MultiPolygon") {
+            // MultiPolygon: coordinates = [ [outerRing, hole...], [outerRing, ...], ...]
+            for (const poly of g.coordinates || []) {
+              if (poly && poly[0]) {
+                rings.push(normalizeRing(poly[0]));
+              }
+            }
+          }
+        }
+        return rings;
+      }
+
+      // 確保 ring 收尾閉合（第一點 = 最後一點）
+      function normalizeRing(ring) {
+        if (!ring || ring.length === 0) return ring;
+        const first = ring[0];
+        const last = ring[ring.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          return [...ring, first];
+        }
+        return ring;
+      }
+
+      // ===== 名城點位層（與之前相同）=====
       const layer100 = L.layerGroup().addTo(map);
       const layer200 = L.layerGroup().addTo(map);
 
-      // 自訂圓點 icon（DivIcon）
       function dotIcon(series) {
         const cls = series === "100" ? "marker-100" : "marker-200";
         return L.divIcon({
@@ -143,27 +172,21 @@
         });
       }
 
-      // 讀取資料並渲染
-      fetch(DATA_URL)
-        .then(r => {
-          if (!r.ok) throw new Error('找不到 data/castles.json（請確認資料夾與檔名大小寫）');
-          return r.json();
-        })
-        .then(data => {
-          data.forEach(item => {
-            const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-              .bindPopup(popupHTML(item));
-
-            if (item.series === "100") marker.addTo(layer100);
-            else marker.addTo(layer200);
-          });
-        })
-        .catch(err => {
-          console.error(err);
-          alert('載入資料失敗：' + err.message);
+      fetch(DATA_URL).then(r => {
+        if (!r.ok) throw new Error("找不到 data/castles.json（請確認資料夾與檔名大小寫）");
+        return r.json();
+      }).then(data => {
+        data.forEach(item => {
+          const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
+            .bindPopup(popupHTML(item));
+          if (item.series === "100") marker.addTo(layer100);
+          else marker.addTo(layer200);
         });
+      }).catch(err => {
+        console.error(err);
+        alert("載入資料失敗：" + err.message);
+      });
 
-      // Popup 內容
       function popupHTML(item) {
         const tag = item.series === "100" ? "百名城" : "續百名城";
         const link = item.official_url ? `<p><a href="${item.official_url}" target="_blank" rel="noopener">官方/參考連結</a></p>` : "";
@@ -176,7 +199,6 @@
         `;
       }
 
-      // 圖層顯示切換（百/續）
       const t100 = document.getElementById('toggle-100');
       const t200 = document.getElementById('toggle-200');
       t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); });
