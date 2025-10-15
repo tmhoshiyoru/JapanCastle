@@ -1,1 +1,62 @@
-
+[
+{
+"id": "jp-001",
+"series": "100",
+"name_ja": "姫路城",
+"name_en": "Himeji Castle",
+"prefecture": "兵庫県",
+"lat": 34.8394,
+"lng": 134.6939,
+"official_url": "https://www.city.himeji.lg.jp/castle/"
+},
+{
+"id": "jp-002",
+"series": "100",
+"name_ja": "松本城",
+"name_en": "Matsumoto Castle",
+"prefecture": "長野県",
+"lat": 36.2381,
+"lng": 137.9707,
+"official_url": "https://www.matsumoto-castle.jp/"
+},
+{
+"id": "jp-003",
+"series": "100",
+"name_ja": "熊本城",
+"name_en": "Kumamoto Castle",
+"prefecture": "熊本県",
+"lat": 32.8061,
+"lng": 130.7061,
+"official_url": "https://castle.kumamoto-guide.jp/"
+},
+{
+"id": "jp-101",
+"series": "続100",
+"name_ja": "福岡城",
+"name_en": "Fukuoka Castle",
+"prefecture": "福岡県",
+"lat": 33.5831,
+"lng": 130.3816,
+"official_url": "https://www.midorimachi.jp/fukuokajyo/"
+},
+{
+"id": "jp-102",
+"series": "続100",
+"name_ja": "品川台場",
+"name_en": "Shinagawa Daiba",
+"prefecture": "東京都",
+"lat": 35.634,
+"lng": 139.774,
+"official_url": "https://www.city.minato.tokyo.jp/bunkazai/daiba.html"
+},
+{
+"id": "jp-103",
+"series": "続100",
+"name_ja": "白石城",
+"name_en": "Shiroishi Castle",
+"prefecture": "宮城県",
+"lat": 38.0037,
+"lng": 140.6192,
+"official_url": "https://shiroishi-castle.com/"
+}
+]
