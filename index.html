@@ -54,7 +54,7 @@
     <!-- Leaflet JS -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- 主程式（含「鎖定日本」設定） -->
+    <!-- 主程式（含：鎖定日本 + 遮罩挖洞） -->
     <script>
       // --- 基本設定 ---
       const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
@@ -86,6 +86,47 @@
         noWrap: true,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       }).addTo(map);
+
+      // ===== 方案B：外部遮罩（矩形挖洞版） =====
+      // 用「世界大矩形」作外環，內環用 JP_BOUNDS 形成『甜甜圈』，把日本框外都上半透明。
+      // 注意：此為「矩形挖洞」，不是沿日本國界；優點是零額外檔案、性能好。
+      (function addOutsideMask() {
+        // 外環：整個世界（[lng, lat]）
+        const worldRing = [
+          [-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]
+        ];
+        // 內環：用 JP_BOUNDS 的矩形（[lng, lat]）
+        const sw = JP_BOUNDS.getSouthWest(); // (lat, lng)
+        const ne = JP_BOUNDS.getNorthEast();
+        const innerRing = [
+          [sw.lng, sw.lat],
+          [sw.lng, ne.lat],
+          [ne.lng, ne.lat],
+          [ne.lng, sw.lat],
+          [sw.lng, sw.lat]
+        ];
+
+        const mask = {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            // GeoJSON 多環：第一個是外環，其後是「挖洞」的內環
+            "coordinates": [ worldRing, innerRing ]
+          }
+        };
+
+        L.geoJSON(mask, {
+          style: {
+            color: "#00000000",              // 無邊線
+            fillColor: "rgba(0,0,0,0.25)",   // 外部半透明變暗
+            fillOpacity: 1,
+            // 關鍵：偶奇規則，讓內環變成挖洞（內部不填色）
+            fillRule: "evenodd"
+          },
+          interactive: false // 遮罩不攔截滑鼠事件
+        }).addTo(map);
+      })();
 
       // 圖層群組（百名城 / 續百名城）
       const layer100 = L.layerGroup().addTo(map);
