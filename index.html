@@ -17,14 +17,17 @@
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin: 0 4px 0 10px; vertical-align: middle; }
       .dot-100 { background: #0b6efd; }
       .dot-200 { background: #9b59b6; }
-      #map { height: calc(100vh - 120px); position: relative; }
+      #map { height: calc(100vh - 140px); position: relative; }
       .layer-toggle {
         position: absolute; right: 12px; top: 70px;
         background: rgba(255,255,255,0.95); border: 1px solid #eee; border-radius: 10px;
-        padding: 8px 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06);
-        z-index: 1050;  /* ★ 讓圖例永遠在遮罩之上 */
+        padding: 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06);
+        z-index: 1050;
+        min-width: 180px;
       }
-      label { display: block; margin: 4px 0; }
+      .layer-toggle .row { margin-top: 8px; }
+      .layer-toggle label { display: block; margin: 4px 0; }
+      .layer-toggle select { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
       .foot { padding: 10px 14px; font-size: 12px; color: #666; border-top: 1px solid #eee; background: #fff; }
       .leaflet-div-icon { background: transparent; border: none; }
       .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
@@ -46,6 +49,17 @@
       <div id="layer-toggle" class="layer-toggle">
         <label><input type="checkbox" id="toggle-100" checked> 百名城</label>
         <label><input type="checkbox" id="toggle-200" checked> 續百名城</label>
+        <div class="row">
+          <label for="sea-color">海色</label>
+          <select id="sea-color" disabled>
+            <!-- value 使用 rgba 文字，方便直接套用 -->
+            <option value="rgba(160,200,240,0.90)" selected>OSM 風格（預設）</option>
+            <option value="rgba(150,190,235,0.95)">更飽和</option>
+            <option value="rgba(160,200,240,0.75)">更淡</option>
+            <option value="rgba(155,205,230,0.90)">偏綠藍</option>
+            <option value="rgba(142,184,222,0.90)">微深藍</option>
+          </select>
+        </div>
       </div>
     </main>
 
@@ -58,44 +72,45 @@
       // ===== 基本設定 =====
       const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
       const DATA_URL = "./data/castles.json";
-      const JP_BOUNDARY_URL = "./data/japan-boundary.geojson"; // 你的精確邊界檔
+      const JP_BOUNDARY_URL = "./data/japan-boundary.geojson";
 
       // 鎖定範圍（約略含沖繩與北海道）
       const JP_BOUNDS = L.latLngBounds([24, 122], [46, 154]);
 
-      if (typeof L === "undefined") {
-        alert("Leaflet 沒載到（可能被公司網路擋）。請改用 jsDelivr 或換網路重試。");
-      }
-
       // 建立地圖
-      const map = L.map("map", {
-        zoomControl: true,
-        worldCopyJump: false
-      }).setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
+      const map = L.map("map", { zoomControl: true, worldCopyJump: false })
+                   .setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
 
       // 鎖定日本
       map.setMinZoom(5);
       map.setMaxBounds(JP_BOUNDS);
       map.options.maxBoundsViscosity = 1.0;
 
-      // OSM 圖磚
+      // 底圖
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 18,
-        noWrap: true,
+        maxZoom: 18, noWrap: true,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       }).addTo(map);
 
-      // ★ 建立專用 pane，讓遮罩在底圖之上、但在 marker 與控制項之下
+      // 遮罩 pane：在底圖上、marker/控制項下
       const maskPane = map.createPane('maskPane');
-      maskPane.style.zIndex = 350; // tiles=200, overlay=400, markers=600 → 設 350 夾在中間
-      maskPane.style.pointerEvents = 'none'; // 雙保險：不攔截滑鼠事件
+      maskPane.style.zIndex = 350;
+      maskPane.style.pointerEvents = 'none';
 
-      // ===== 沿日本國界挖洞，外側覆蓋淺藍色（不遮住圖例） =====
+      // 參考 UI
+      const t100 = document.getElementById('toggle-100');
+      const t200 = document.getElementById('toggle-200');
+      const seaSelect = document.getElementById('sea-color');
+
+      // ===== 沿日本國界挖洞的淺藍遮罩 =====
+      let maskLayer = null;
+      const defaultSea = seaSelect.value; // 初始值與選單一致
+
       fetch(JP_BOUNDARY_URL).then(r => {
         if (!r.ok) throw new Error("找不到 data/japan-boundary.geojson");
         return r.json();
       }).then(geo => {
-        const holes = collectJapanOuterRings(geo); // 多個外環 ring（[lng,lat]）
+        const holes = collectJapanOuterRings(geo);
 
         const worldRing = [
           [-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]
@@ -104,33 +119,37 @@
         const mask = {
           type: "Feature",
           properties: {},
-          geometry: {
-            type: "Polygon",
-            coordinates: [worldRing, ...holes]
-          }
+          geometry: { type: "Polygon", coordinates: [worldRing, ...holes] }
         };
 
-        L.geoJSON(mask, {
-          pane: 'maskPane',                  // ★ 放在低 z-index pane
+        maskLayer = L.geoJSON(mask, {
+          pane: 'maskPane',
           style: {
             color: "#00000000",
-            fillColor: "rgba(216,238,252,0.92)", // 淺藍海色
+            fillColor: defaultSea,   // 使用當前選項
             fillOpacity: 1,
             fillRule: "evenodd"
           },
           interactive: false
         }).addTo(map);
-      }).catch(err => {
-        console.error(err);
+
+        // 遮罩就緒後啟用選單
+        seaSelect.disabled = false;
+      }).catch(err => console.error(err));
+
+      // 即時切換海色
+      seaSelect.addEventListener('change', () => {
+        if (maskLayer) {
+          maskLayer.setStyle({ fillColor: seaSelect.value });
+        }
       });
 
       function collectJapanOuterRings(geojson) {
         const rings = [];
         const feats = geojson.type === "FeatureCollection"
           ? geojson.features
-          : geojson.type === "Feature"
-            ? [geojson]
-            : [{ type: "Feature", geometry: geojson }];
+          : geojson.type === "Feature" ? [geojson]
+          : [{ type: "Feature", geometry: geojson }];
 
         for (const f of feats) {
           const g = f.geometry;
@@ -161,8 +180,7 @@
         return L.divIcon({
           className: `leaflet-div-icon ${cls}`,
           html: `<div class="${cls}"></div>`,
-          iconSize: [18,18],
-          iconAnchor: [9,9]
+          iconSize: [18,18], iconAnchor: [9,9]
         });
       }
 
@@ -172,9 +190,8 @@
       }).then(data => {
         data.forEach(item => {
           const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-            .bindPopup(popupHTML(item));
-          if (item.series === "100") marker.addTo(layer100);
-          else marker.addTo(layer200);
+                          .bindPopup(popupHTML(item));
+          (item.series === "100" ? layer100 : layer200).addLayer(marker);
         });
       }).catch(err => {
         console.error(err);
@@ -186,17 +203,20 @@
         const link = item.official_url ? `<p><a href="${item.official_url}" target="_blank" rel="noopener">官方/參考連結</a></p>` : "";
         return `
           <div>
-            <strong>${item.name_ja}</strong> <span style="font-size:12px;color:#666">（${tag}）</span><br/>
+            <strong>${item.name_ja}</strong>
+            <span style="font-size:12px;color:#666">（${tag}）</span><br/>
             <span style="font-size:12px;color:#666">${item.prefecture || ""} ${item.name_en ? "｜"+item.name_en : ""}</span>
             ${link}
-          </div>
-        `;
+          </div>`;
       }
 
-      const t100 = document.getElementById('toggle-100');
-      const t200 = document.getElementById('toggle-200');
-      t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); });
-      t200.addEventListener('change', () => { if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200); });
+      // 圖層顯示切換
+      t100.addEventListener('change', () => {
+        if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100);
+      });
+      t200.addEventListener('change', () => {
+        if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200);
+      });
     </script>
   </body>
 </html>
