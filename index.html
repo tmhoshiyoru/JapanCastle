@@ -43,6 +43,7 @@
       .thumbs img { width: 90px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
       .badge { display:inline-block; padding:2px 6px; border-radius:6px; font-size:12px; color:#fff; background:#0b6efd; }
       .badge.badge-200 { background:#9b59b6; }
+      .thumbs:empty { display: none; }
     </style>
   </head>
   <body>
@@ -146,7 +147,26 @@
           iconSize: [18,18], iconAnchor: [9,9]
         });
       }
-
+      // 僅接受 https 或站內相對路徑；其餘（http/空字串）略過，避免 mixed content
+      function safeImgSrc(src) {
+        if (!src) return "";
+        if (src.startsWith("https://")) return src;
+        if (src.startsWith("./") || src.startsWith("/")) return src;
+        return ""; // 不安全或不支援的來源
+      }
+      // 照片清單清理：移除無效/重複/空白
+      function sanitizePhotos(arr) {
+        if (!Array.isArray(arr)) return [];
+        const seen = new Set();
+        const out = [];
+        for (const p of arr) {
+          const s = safeImgSrc(p?.src);
+          if (!s || seen.has(s)) continue;
+          seen.add(s);
+          out.push({ src: s, caption: p?.caption || "" });
+        }
+        return out.slice(0, 6); // 最多保留 6 張以防太多
+      }
       function popupHTML(item) {
         const seriesTag = item.series === "100" ? "百名城" : "續百名城";
         const seriesBadge = `<span class="badge ${item.series === "100" ? "" : "badge-200"}">${seriesTag}${item.number ? " #" + item.number : ""}</span>`;
@@ -173,13 +193,17 @@
           rows.push(`<div class="info-row"><span class="info-label">御城印</span><span>${[avail, item.goshuin.place, price, item.goshuin.hours, item.goshuin.notes].filter(Boolean).join("｜")}</span></div>`);
         }
 
-        // 照片縮圖（最多顯示 3 張）
+       // 照片縮圖（安全處理：沒圖就不顯示、有壞圖自動移除）
         let thumbs = "";
-        if (Array.isArray(item.photos) && item.photos.length > 0) {
-          const toShow = item.photos.slice(0, 3);
-          thumbs = `<div class="thumbs">` + toShow.map(p => {
+        const cleanPhotos = sanitizePhotos(item.photos);
+        if (cleanPhotos.length > 0) {
+          thumbs = `<div class="thumbs">` + cleanPhotos.slice(0, 3).map(p => {
             const cap = p.caption ? ` title="${escapeHtml(p.caption)}"` : "";
-            return `<a href="${p.src}" target="_blank" rel="noopener"><img loading="lazy" src="${p.src}" alt="${escapeHtml(item.name_zh || item.name_ja || item.name_en || "")}" ${cap}></a>`;
+            // onerror 移除壞圖；referrerpolicy 避免某些站點擋引用
+            return `<a href="${p.src}" target="_blank" rel="noopener">
+                      <img loading="lazy" referrerpolicy="no-referrer" src="${p.src}" alt="${escapeHtml(item.name_zh || item.name_ja || item.name_en || "")}" ${cap}
+                           onerror="this.remove()">
+                    </a>`;
           }).join("") + `</div>`;
         }
 
@@ -193,7 +217,7 @@
             ${thumbs}
           </div>
         `;
-      }
+      } 
 
       function row(label, valueHtml) {
         return `<div class="info-row"><span class="info-label">${label}</span><span>${valueHtml}</span></div>`;
