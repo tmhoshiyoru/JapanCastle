@@ -8,7 +8,7 @@
     "name_en": "Himeji Castle",           // 英文名稱
     "lat": 34.8394,
     "lng": 134.6939,
-    "prefecture": "兵庫県",
+    "prefecture": "兵庫県", 
     "official_url": "https://www.city.himeji.lg.jp/castle/",
     "stamp": {                            // 集章資訊（可選）
       "place": "姬路城大手門售票口旁服務中心",
