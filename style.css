@@ -15,4 +15,3 @@ label { display: block; margin: 4px 0; }
 .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
 .marker-100 { background: #0b6efd; }
 .marker-200 { background: #9b59b6; }
-.thumbs:empty { display: none; }
