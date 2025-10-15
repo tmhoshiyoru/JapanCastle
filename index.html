@@ -5,19 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>日本百大名城・續百大名城地圖</title>
 
-    <!-- Leaflet（改用 jsDelivr，較不易被公司網路擋） -->
+    <!-- Leaflet（使用 jsDelivr，較不易被公司網路擋） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- 內嵌必要樣式：即使外部 CSS 沒載到也能看到地圖 -->
     <style>
-      /* 避免 style.css 未載入時地圖高度為 0 */
-      #map { height: 80vh; }
-      .topbar { padding: 10px 14px; border-bottom: 1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
-      .legend { font-size:14px; color:#555; }
-      .dot { display:inline-block; width:10px; height:10px; border-radius:999px; margin:0 4px 0 10px; vertical-align:middle; }
-      .dot-100 { background:#0b6efd; } .dot-200 { background:#9b59b6; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, "Noto Sans TC", Arial; color: #222; }
+      .topbar { position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #eee; background: #fff; }
+      .topbar h1 { font-size: 18px; margin: 0; }
+      .legend { font-size: 14px; color: #555; }
+      .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin: 0 4px 0 10px; vertical-align: middle; }
+      .dot-100 { background: #0b6efd; }
+      .dot-200 { background: #9b59b6; }
+      #map { height: calc(100vh - 120px); }
       .layer-toggle { position: absolute; right: 12px; top: 70px; background: rgba(255,255,255,0.95); border: 1px solid #eee; border-radius: 10px; padding: 8px 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+      label { display: block; margin: 4px 0; }
+      .foot { padding: 10px 14px; font-size: 12px; color: #666; border-top: 1px solid #eee; background: #fff; }
+
+      /* 自訂圓點樣式（使用 DivIcon） */
       .leaflet-div-icon { background: transparent; border: none; }
       .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
-      .marker-100 { background: #0b6efd; } .marker-200 { background: #9b59b6; }
+      .marker-100 { background: #0b6efd; }
+      .marker-200 { background: #9b59b6; }
     </style>
   </head>
   <body>
@@ -37,30 +47,51 @@
       </div>
     </main>
 
-    <footer class="foot" style="padding:10px 14px; font-size:12px; color:#666; border-top:1px solid #eee;">
+    <footer class="foot">
       地圖資料 © OpenStreetMap 貢獻者 ｜ Tiles by OSM ｜ Powered by Leaflet
     </footer>
 
+    <!-- Leaflet JS -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- 主程式（含「鎖定日本」設定） -->
     <script>
-      // --- app.js 的最小必要邏輯（直接內嵌測試） ---
+      // --- 基本設定 ---
       const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
       const DATA_URL = "./data/castles.json";
 
-      // 安全檢查：若 Leaflet 沒載到，顯示友善提示
+      // 日本邊界框（約略涵蓋沖繩～北海道）
+      // 格式：[南緯/西經], [北緯/東經]
+      const JP_BOUNDS = L.latLngBounds([24, 122], [46, 154]);
+
+      // 安全檢查：若 Leaflet 沒載到，顯示提示
       if (typeof L === 'undefined') {
-        alert('Leaflet 沒載到（公司網路可能擋 CDN）。\n請改用 jsDelivr 或換網路重試。');
+        alert('Leaflet 沒載到（公司網路可能擋 CDN）。請改用 jsDelivr 或換網路重試。');
       }
 
-      const map = L.map("map", { zoomControl: true }).setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
+      // 建立地圖
+      const map = L.map("map", {
+        zoomControl: true,
+        worldCopyJump: false // 不要在換日線複製世界
+      }).setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
+
+      // 把地圖「鎖在日本」
+      map.setMinZoom(5);                    // 不讓縮得太小（避免看到大量周邊國家）
+      map.setMaxBounds(JP_BOUNDS);          // 不讓拖出邊界
+      map.options.maxBoundsViscosity = 1.0; // 黏性：拖到邊緣彈回
+
+      // OSM 圖磚（避免世界橫向重複）
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
+        noWrap: true,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       }).addTo(map);
 
+      // 圖層群組（百名城 / 續百名城）
       const layer100 = L.layerGroup().addTo(map);
       const layer200 = L.layerGroup().addTo(map);
 
+      // 自訂圓點 icon（DivIcon）
       function dotIcon(series) {
         const cls = series === "100" ? "marker-100" : "marker-200";
         return L.divIcon({
@@ -71,21 +102,27 @@
         });
       }
 
-      fetch(DATA_URL).then(r => {
-        if (!r.ok) throw new Error('找不到 data/castles.json（請確認資料夾與檔名大小寫）');
-        return r.json();
-      }).then(data => {
-        data.forEach(item => {
-          const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-            .bindPopup(popupHTML(item));
-          if (item.series === "100") marker.addTo(layer100);
-          else marker.addTo(layer200);
-        });
-      }).catch(err => {
-        console.error(err);
-        alert('載入資料失敗：' + err.message);
-      });
+      // 讀取資料並渲染
+      fetch(DATA_URL)
+        .then(r => {
+          if (!r.ok) throw new Error('找不到 data/castles.json（請確認資料夾與檔名大小寫）');
+          return r.json();
+        })
+        .then(data => {
+          data.forEach(item => {
+            const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
+              .bindPopup(popupHTML(item));
 
+            if (item.series === "100") marker.addTo(layer100);
+            else marker.addTo(layer200);
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          alert('載入資料失敗：' + err.message);
+        });
+
+      // Popup 內容
       function popupHTML(item) {
         const tag = item.series === "100" ? "百名城" : "續百名城";
         const link = item.official_url ? `<p><a href="${item.official_url}" target="_blank" rel="noopener">官方/參考連結</a></p>` : "";
@@ -98,6 +135,7 @@
         `;
       }
 
+      // 圖層顯示切換（百/續）
       const t100 = document.getElementById('toggle-100');
       const t200 = document.getElementById('toggle-200');
       t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); });
