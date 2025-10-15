@@ -17,22 +17,24 @@
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin: 0 4px 0 10px; vertical-align: middle; }
       .dot-100 { background: #0b6efd; }
       .dot-200 { background: #9b59b6; }
-      #map { height: calc(100vh - 140px); position: relative; }
-      .layer-toggle {
+      #map { height: calc(100vh - 160px); position: relative; }
+      .panel {
         position: absolute; right: 12px; top: 70px;
         background: rgba(255,255,255,0.95); border: 1px solid #eee; border-radius: 10px;
         padding: 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06);
-        z-index: 1050;
-        min-width: 180px;
+        z-index: 1050; min-width: 220px;
       }
-      .layer-toggle .row { margin-top: 8px; }
-      .layer-toggle label { display: block; margin: 4px 0; }
-      .layer-toggle select { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+      .panel .row { margin-top: 10px; }
+      .panel label { display: block; margin: 4px 0; }
+      .panel select, .panel button {
+        width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff;
+      }
       .foot { padding: 10px 14px; font-size: 12px; color: #666; border-top: 1px solid #eee; background: #fff; }
       .leaflet-div-icon { background: transparent; border: none; }
       .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
       .marker-100 { background: #0b6efd; }
       .marker-200 { background: #9b59b6; }
+      .muted { color:#666; font-size:12px; }
     </style>
   </head>
   <body>
@@ -40,25 +42,34 @@
       <h1>日本百大名城・續百大名城地圖</h1>
       <div class="legend">
         <span class="dot dot-100" title="百名城"></span> 百名城
-        <span class="dot dot-200" title="續百名城"></span> 續百名城
+        <span class="dot dot-200" title="續百大"></span> 續百大
       </div>
     </header>
 
     <main>
       <div id="map"></div>
-      <div id="layer-toggle" class="layer-toggle">
+      <div class="panel" id="controls">
         <label><input type="checkbox" id="toggle-100" checked> 百名城</label>
         <label><input type="checkbox" id="toggle-200" checked> 續百名城</label>
+
         <div class="row">
           <label for="sea-color">海色</label>
           <select id="sea-color" disabled>
-            <!-- value 使用 rgba 文字，方便直接套用 -->
             <option value="rgba(170,211,223,1.0)" selected>預設</option>
             <option value="rgba(150,190,235,0.95)">更飽和</option>
             <option value="rgba(160,200,240,0.75)">更淡</option>
             <option value="rgba(155,205,230,0.90)">偏綠藍</option>
             <option value="rgba(142,184,222,0.90)">微深藍</option>
           </select>
+        </div>
+
+        <div class="row">
+          <label for="pref-select">都道府縣</label>
+          <select id="pref-select" disabled>
+            <option value="">全部（不篩選）</option>
+          </select>
+          <div class="muted">可直接點地圖上的縣界高亮與篩選</div>
+          <div class="row"><button id="pref-clear" disabled>清除縣界篩選</button></div>
         </div>
       </div>
     </main>
@@ -72,79 +83,241 @@
       // ===== 基本設定 =====
       const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
       const DATA_URL = "./data/castles.json";
-      const JP_BOUNDARY_URL = "./data/japan-boundary.geojson";
+      // 你的「領土 ∪ 領海」聯集邊界（或只領海/只領土也可）
+      const JP_BOUNDARY_URL = "./data/japan-territory+12nm.geojson";
+      // 都道府縣邊界（Polygon/MultiPolygon，需含日文名稱屬性）
+      const PREF_GEOJSON_URL = "./data/jp-prefectures.geojson";
 
-      // 鎖定範圍（約略含沖繩與北海道）
-      const JP_BOUNDS = L.latLngBounds([24, 122], [46, 154]);
+      // 鎖定範圍（含外海領海圈）
+      const JP_BOUNDS = L.latLngBounds([22, 122], [47.5, 158]);
 
-      // 建立地圖
       const map = L.map("map", { zoomControl: true, worldCopyJump: false })
                    .setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
-
-      // 鎖定日本
       map.setMinZoom(5);
       map.setMaxBounds(JP_BOUNDS);
       map.options.maxBoundsViscosity = 1.0;
 
-      // 底圖
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18, noWrap: true,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       }).addTo(map);
 
-      // 遮罩 pane：在底圖上、marker/控制項下
+      // === 遮罩 pane（底圖上、marker/控制下） ===
       const maskPane = map.createPane('maskPane');
       maskPane.style.zIndex = 350;
       maskPane.style.pointerEvents = 'none';
 
-      // 參考 UI
-      const t100 = document.getElementById('toggle-100');
-      const t200 = document.getElementById('toggle-200');
+      // === 海色選單 ===
       const seaSelect = document.getElementById('sea-color');
-
-      // ===== 沿日本國界挖洞的淺藍遮罩 =====
       let maskLayer = null;
-      const defaultSea = seaSelect.value; // 初始值與選單一致
 
+      // 載入領土+領海邊界 → 外部海色遮罩（沿邊界挖洞）
       fetch(JP_BOUNDARY_URL).then(r => {
-        if (!r.ok) throw new Error("找不到 data/japan-boundary.geojson");
+        if (!r.ok) throw new Error("找不到聯集邊界 GeoJSON");
         return r.json();
       }).then(geo => {
-        const holes = collectJapanOuterRings(geo);
-
-        const worldRing = [
-          [-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]
-        ];
-
-        const mask = {
-          type: "Feature",
-          properties: {},
-          geometry: { type: "Polygon", coordinates: [worldRing, ...holes] }
-        };
+        const holes = collectOuterRings(geo); // 多個 ring（[lng,lat]）
+        const worldRing = [[-180,-90],[-180,90],[180,90],[180,-90],[-180,-90]];
+        const mask = { type:"Feature", geometry:{ type:"Polygon", coordinates:[worldRing, ...holes] } };
 
         maskLayer = L.geoJSON(mask, {
           pane: 'maskPane',
-          style: {
-            color: "#00000000",
-            fillColor: defaultSea,   // 使用當前選項
-            fillOpacity: 1,
-            fillRule: "evenodd"
-          },
+          style: { color:"#00000000", fillColor: seaSelect.value, fillOpacity:1, fillRule:"evenodd" },
           interactive: false
         }).addTo(map);
 
-        // 遮罩就緒後啟用選單
         seaSelect.disabled = false;
-      }).catch(err => console.error(err));
+      }).catch(console.error);
 
-      // 即時切換海色
       seaSelect.addEventListener('change', () => {
-        if (maskLayer) {
-          maskLayer.setStyle({ fillColor: seaSelect.value });
+        if (maskLayer) maskLayer.setStyle({ fillColor: seaSelect.value });
+      });
+
+      // ====== 名城點位 ======
+      const layer100 = L.layerGroup().addTo(map);
+      const layer200 = L.layerGroup().addTo(map);
+      const markers = []; // { id, series, meta, marker }
+
+      function dotIcon(series) {
+        const cls = series === "100" ? "marker-100" : "marker-200";
+        return L.divIcon({
+          className: `leaflet-div-icon ${cls}`,
+          html: `<div class="${cls}"></div>`,
+          iconSize: [18,18], iconAnchor: [9,9]
+        });
+      }
+      function popupHTML(item) {
+        const tag = item.series === "100" ? "百名城" : "續百名城";
+        const link = item.official_url ? `<p><a href="${item.official_url}" target="_blank" rel="noopener">官方/參考連結</a></p>` : "";
+        return `
+          <div>
+            <strong>${item.name_ja}</strong>
+            <span style="font-size:12px;color:#666">（${tag}）</span><br/>
+            <span style="font-size:12px;color:#666">${item.prefecture || ""} ${item.name_en ? "｜"+item.name_en : ""}</span>
+            ${link}
+          </div>`;
+      }
+
+      fetch(DATA_URL).then(r => {
+        if (!r.ok) throw new Error("找不到 data/castles.json");
+        return r.json();
+      }).then(data => {
+        data.forEach(item => {
+          const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
+                     .bindPopup(popupHTML(item));
+          (item.series === "100" ? layer100 : layer200).addLayer(m);
+          markers.push({ id: item.id, series: item.series, meta: item, marker: m });
+        });
+      }).catch(err => { console.error(err); alert("載入資料失敗：" + err.message); });
+
+      // === 百/續切換 ===
+      const t100 = document.getElementById('toggle-100');
+      const t200 = document.getElementById('toggle-200');
+      t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); applyPrefFilter(); });
+      t200.addEventListener('change', () => { if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200); applyPrefFilter(); });
+
+      // ===== 都道府縣圖層（高亮＋篩選） =====
+      const prefSelect = document.getElementById('pref-select');
+      const prefClearBtn = document.getElementById('pref-clear');
+
+      // 專用 pane：讓縣界線位於遮罩之上、marker 之下（或同層）
+      const prefPane = map.createPane('prefPane');
+      prefPane.style.zIndex = 500;
+
+      let prefLayer = null;
+      let selectedPrefName = "";  // 正在篩選的縣名（標準化後）
+      let selectedFeature = null; // 被選中的 feature（用來改樣式）
+
+      // 樣式
+      const prefStyle = { color:"#666", weight:1, fillOpacity:0, pane:'prefPane' };
+      const prefHoverStyle = { weight:2, color:"#111" };
+      const prefSelectedStyle = { color:"#0b6efd", weight:3, fillColor:"#0b6efd", fillOpacity:0.08 };
+
+      // 讀取縣界
+      fetch(PREF_GEOJSON_URL).then(r => {
+        if (!r.ok) throw new Error("找不到都道府縣 GeoJSON");
+        return r.json();
+      }).then(geo => {
+        // 準備下拉選單選項
+        const names = collectPrefNames(geo).sort((a,b)=>a.localeCompare(b,'ja'));
+        names.forEach(n => {
+          const opt = document.createElement('option');
+          opt.value = n; opt.textContent = n;
+          prefSelect.appendChild(opt);
+        });
+        prefSelect.disabled = false; prefClearBtn.disabled = false;
+
+        // 畫圖層
+        prefLayer = L.geoJSON(geo, {
+          pane: 'prefPane',
+          style: prefStyle,
+          onEachFeature: (feature, layer) => {
+            const name = getPrefName(feature);
+            if (!name) return;
+
+            layer.on('mouseover', () => layer.setStyle(prefHoverStyle));
+            layer.on('mouseout', () => {
+              if (selectedFeature === layer) return; // 保持選中樣式
+              layer.setStyle(prefStyle);
+            });
+            layer.on('click', () => {
+              // 取消前一個選中
+              if (selectedFeature && selectedFeature !== layer) {
+                selectedFeature.setStyle(prefStyle);
+              }
+              selectedFeature = layer;
+              layer.setStyle(prefSelectedStyle);
+
+              // 設定下拉與篩選
+              prefSelect.value = name; 
+              selectedPrefName = normalizePref(name);
+              applyPrefFilter();
+
+              // 視野貼合該縣
+              try { map.fitBounds(layer.getBounds(), { maxZoom: 8, padding:[20,20] }); } catch(e){}
+            });
+          }
+        }).addTo(map);
+      }).catch(console.error);
+
+      // 下拉選單變更 → 篩選
+      prefSelect.addEventListener('change', () => {
+        const n = prefSelect.value;
+        // 清除舊選中樣式
+        if (selectedFeature) { selectedFeature.setStyle(prefStyle); selectedFeature = null; }
+        if (!n) {
+          selectedPrefName = "";
+          applyPrefFilter();
+          return;
+        }
+        selectedPrefName = normalizePref(n);
+        applyPrefFilter();
+
+        // 讓地圖視野貼合該縣
+        if (prefLayer) {
+          prefLayer.eachLayer(l => {
+            const lname = getPrefName(l.feature);
+            if (lname === n) {
+              selectedFeature = l;
+              l.setStyle(prefSelectedStyle);
+              try { map.fitBounds(l.getBounds(), { maxZoom: 8, padding:[20,20] }); } catch(e){}
+            }
+          });
         }
       });
 
-      function collectJapanOuterRings(geojson) {
+      // 清除篩選
+      prefClearBtn.addEventListener('click', () => {
+        prefSelect.value = "";
+        selectedPrefName = "";
+        if (selectedFeature) { selectedFeature.setStyle(prefStyle); selectedFeature = null; }
+        applyPrefFilter();
+      });
+
+      // ====== 篩選邏輯：依「都道府縣」名稱比對（不做幾何內含） ======
+      function applyPrefFilter() {
+        const show100 = t100.checked;
+        const show200 = t200.checked;
+
+        markers.forEach(({ series, meta, marker }) => {
+          const seriesOk = (series === "100" && show100) || (series !== "100" && show200);
+          const prefOk = !selectedPrefName || normalizePref(meta.prefecture || "") === selectedPrefName;
+
+          const shouldShow = seriesOk && prefOk;
+          if (shouldShow) {
+            // 重新加入對應圖層（若被 remove 過）
+            if (series === "100") layer100.addLayer(marker);
+            else layer200.addLayer(marker);
+          } else {
+            // 從地圖移除
+            if (series === "100") layer100.removeLayer(marker);
+            else layer200.removeLayer(marker);
+          }
+        });
+      }
+
+      // ===== 工具函式 =====
+      // 從 GeoJSON 取都道府縣名稱（支援 name_ja / nam_ja / NAME_JA / name）
+      function getPrefName(f) {
+        if (!f || !f.properties) return "";
+        return f.properties.name_ja || f.properties.nam_ja || f.properties.NAME_JA || f.properties.name || "";
+      }
+
+      // 收集所有縣名
+      function collectPrefNames(geojson) {
+        const feats = geojson.type === "FeatureCollection"
+          ? geojson.features
+          : geojson.type === "Feature" ? [geojson] : [];
+        const set = new Set();
+        feats.forEach(f => {
+          const n = getPrefName(f);
+          if (n) set.add(n);
+        });
+        return Array.from(set);
+      }
+
+      // 從 GeoJSON 的 Polygon/MultiPolygon 取「外環」做洞（[lng,lat]）
+      function collectOuterRings(geojson) {
         const rings = [];
         const feats = geojson.type === "FeatureCollection"
           ? geojson.features
@@ -164,59 +337,29 @@
         }
         return rings;
       }
+
+      // ring 首尾閉合
       function normalizeRing(ring) {
         if (!ring || ring.length === 0) return ring;
-        const first = ring[0], last = ring[ring.length - 1];
-        if (first[0] !== last[0] || first[1] !== last[1]) return [...ring, first];
+        const a = ring[0], b = ring[ring.length - 1];
+        if (a[0] !== b[0] || a[1] !== b[1]) return [...ring, a];
         return ring;
       }
 
-      // ===== 名城點位層 =====
-      const layer100 = L.layerGroup().addTo(map);
-      const layer200 = L.layerGroup().addTo(map);
-
-      function dotIcon(series) {
-        const cls = series === "100" ? "marker-100" : "marker-200";
-        return L.divIcon({
-          className: `leaflet-div-icon ${cls}`,
-          html: `<div class="${cls}"></div>`,
-          iconSize: [18,18], iconAnchor: [9,9]
-        });
+      // 名稱正規化：去掉「都/道/府/県」與空白（讓 "東京都" 和 "東京" 可對上）
+      function normalizePref(s) {
+        return String(s || "")
+          .replace(/\s+/g, "")
+          .replace(/[都道府県]$/u, "")
+          .replace(/(東京都|北海道|京都府|大阪府)$/u, (m) => {
+            // 保留前綴（例如 東京都 -> 東京）
+            if (m === "東京都") return "東京";
+            if (m === "北海道") return "北海道"; // 北海道沒有「道」字尾
+            if (m === "京都府") return "京都";
+            if (m === "大阪府") return "大阪";
+            return m;
+          });
       }
-
-      fetch(DATA_URL).then(r => {
-        if (!r.ok) throw new Error("找不到 data/castles.json（請確認資料夾與檔名大小寫）");
-        return r.json();
-      }).then(data => {
-        data.forEach(item => {
-          const marker = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-                          .bindPopup(popupHTML(item));
-          (item.series === "100" ? layer100 : layer200).addLayer(marker);
-        });
-      }).catch(err => {
-        console.error(err);
-        alert("載入資料失敗：" + err.message);
-      });
-
-      function popupHTML(item) {
-        const tag = item.series === "100" ? "百名城" : "續百名城";
-        const link = item.official_url ? `<p><a href="${item.official_url}" target="_blank" rel="noopener">官方/參考連結</a></p>` : "";
-        return `
-          <div>
-            <strong>${item.name_ja}</strong>
-            <span style="font-size:12px;color:#666">（${tag}）</span><br/>
-            <span style="font-size:12px;color:#666">${item.prefecture || ""} ${item.name_en ? "｜"+item.name_en : ""}</span>
-            ${link}
-          </div>`;
-      }
-
-      // 圖層顯示切換
-      t100.addEventListener('change', () => {
-        if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100);
-      });
-      t200.addEventListener('change', () => {
-        if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200);
-      });
     </script>
   </body>
 </html>
