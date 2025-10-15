@@ -50,4 +50,261 @@
       <h1>日本百大名城・續百大名城地圖</h1>
       <div class="legend">
         <span class="dot dot-100" title="百名城"></span> 百名城
-        <span class="d
+        <span class="dot dot-200" title="續百大"></span> 續百大
+      </div>
+    </header>
+
+    <main>
+      <div id="map"></div>
+      <div class="panel" id="controls">
+        <label><input type="checkbox" id="toggle-100" checked> 百名城</label>
+        <label><input type="checkbox" id="toggle-200" checked> 續百名城</label>
+
+        <div class="row">
+          <label for="sea-color">海色</label>
+          <select id="sea-color" disabled>
+            <option value="rgba(170,211,223,1.0)" selected>預設</option>
+            <option value="rgba(150,190,235,0.95)">更飽和</option>
+            <option value="rgba(160,200,240,0.75)">更淡</option>
+            <option value="rgba(155,205,230,0.90)">偏綠藍</option>
+            <option value="rgba(142,184,222,0.90)">微深藍</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="pref-select">都道府縣</label>
+          <select id="pref-select" disabled>
+            <option value="">全部（不篩選）</option>
+          </select>
+          <div class="muted">可直接點地圖上的縣界高亮與篩選</div>
+          <div class="row"><button id="pref-clear" disabled>清除縣界篩選</button></div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="foot">
+      地圖資料 © OpenStreetMap 貢獻者 ｜ Tiles by OSM ｜ Powered by Leaflet
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // ===== 基本設定 =====
+      const MAP_INIT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
+      const DATA_URL = "./data/castles.json";
+      const JP_BOUNDARY_URL = "./data/japan-territory+12nm.geojson"; // 你之前做的「領土 ∪ 領海」
+      const PREF_GEOJSON_URL = "./data/jp-prefectures.geojson";
+
+      const JP_BOUNDS = L.latLngBounds([22, 122], [47.5, 158]);
+
+      const map = L.map("map", { zoomControl: true, worldCopyJump: false })
+                   .setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
+      map.setMinZoom(5);
+      map.setMaxBounds(JP_BOUNDS);
+      map.options.maxBoundsViscosity = 1.0;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18, noWrap: true,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(map);
+
+      // 遮罩 pane
+      const maskPane = map.createPane('maskPane');
+      maskPane.style.zIndex = 350;
+      maskPane.style.pointerEvents = 'none';
+
+      // 海色選單
+      const seaSelect = document.getElementById('sea-color');
+      let maskLayer = null;
+
+      // 外海遮罩（沿邊界挖洞）
+      fetch(JP_BOUNDARY_URL).then(r => r.json()).then(geo => {
+        const holes = collectOuterRings(geo);
+        const worldRing = [[-180,-90],[-180,90],[180,90],[180,-90],[-180,-90]];
+        const mask = { type: "Feature", geometry: { type: "Polygon", coordinates: [worldRing, ...holes] } };
+        maskLayer = L.geoJSON(mask, {
+          pane: 'maskPane',
+          style: { color:"#00000000", fillColor: seaSelect.value, fillOpacity:1, fillRule:"evenodd" },
+          interactive: false
+        }).addTo(map);
+        seaSelect.disabled = false;
+      });
+
+      seaSelect.addEventListener('change', () => {
+        if (maskLayer) maskLayer.setStyle({ fillColor: seaSelect.value });
+      });
+
+      // ===== 名城點位 =====
+      const layer100 = L.layerGroup().addTo(map);
+      const layer200 = L.layerGroup().addTo(map);
+      const markers = [];
+
+      function dotIcon(series) {
+        const cls = series === "100" ? "marker-100" : "marker-200";
+        return L.divIcon({
+          className: `leaflet-div-icon ${cls}`,
+          html: `<div class="${cls}"></div>`,
+          iconSize: [18,18], iconAnchor: [9,9]
+        });
+      }
+
+      function popupHTML(item) {
+        const seriesTag = item.series === "100" ? "百名城" : "續百名城";
+        const seriesBadge = `<span class="badge ${item.series === "100" ? "" : "badge-200"}">${seriesTag}${item.number ? " #" + item.number : ""}</span>`;
+        const nmzh = item.name_zh ? `<div class="popup-title">${item.name_zh} ${seriesBadge}</div>` : `<div class="popup-title">${item.name_ja || item.name_en || ""} ${seriesBadge}</div>`;
+        const sub = [
+          item.name_ja ? `日：${item.name_ja}` : "",
+          item.name_en ? `EN：${item.name_en}` : ""
+        ].filter(Boolean).join("　");
+
+        const rows = [];
+        if (item.prefecture) rows.push(row("都道府縣", item.prefecture));
+        if (item.official_url) rows.push(row("官方網站", `<a href="${item.official_url}" target="_blank" rel="noopener">前往網站</a>`));
+
+        // 集章
+        if (item.stamp && (item.stamp.place || item.stamp.hours || item.stamp.notes || item.stamp.url)) {
+          rows.push(`<div class="info-row"><span class="info-label">集章</span><span>${[
+            item.stamp.place, item.stamp.hours, item.stamp.notes
+          ].filter(Boolean).join("｜")} ${item.stamp.url ? `｜<a href="${item.stamp.url}" target="_blank" rel="noopener">資訊</a>` : ""}</span></div>`);
+        }
+        // 御城印
+        if (item.goshuin && (item.goshuin.available || item.goshuin.place || item.goshuin.price_yen || item.goshuin.hours || item.goshuin.notes)) {
+          const avail = item.goshuin.available === false ? "（可能無販售）" : "";
+          const price = item.goshuin.price_yen ? `￥${item.goshuin.price_yen}` : "";
+          rows.push(`<div class="info-row"><span class="info-label">御城印</span><span>${[avail, item.goshuin.place, price, item.goshuin.hours, item.goshuin.notes].filter(Boolean).join("｜")}</span></div>`);
+        }
+
+        // 照片縮圖（最多顯示 3 張）
+        let thumbs = "";
+        if (Array.isArray(item.photos) && item.photos.length > 0) {
+          const toShow = item.photos.slice(0, 3);
+          thumbs = `<div class="thumbs">` + toShow.map(p => {
+            const cap = p.caption ? ` title="${escapeHtml(p.caption)}"` : "";
+            return `<a href="${p.src}" target="_blank" rel="noopener"><img loading="lazy" src="${p.src}" alt="${escapeHtml(item.name_zh || item.name_ja || item.name_en || "")}" ${cap}></a>`;
+          }).join("") + `</div>`;
+        }
+
+        return `
+          <div class="popup-wrap">
+            ${nmzh}
+            ${sub ? `<div class="popup-sub">${sub}</div>` : ""}
+            <div class="info-grid">
+              ${rows.join("")}
+            </div>
+            ${thumbs}
+          </div>
+        `;
+      }
+
+      function row(label, valueHtml) {
+        return `<div class="info-row"><span class="info-label">${label}</span><span>${valueHtml}</span></div>`;
+      }
+      function escapeHtml(s) {
+        return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      fetch(DATA_URL).then(r => r.json()).then(data => {
+        data.forEach(item => {
+          const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
+                     .bindPopup(popupHTML(item));
+          (item.series === "100" ? layer100 : layer200).addLayer(m);
+          markers.push({ id: item.id, series: item.series, meta: item, marker: m });
+        });
+      }).catch(err => { console.error(err); alert("載入資料失敗：" + err.message); });
+
+      // 百/續切換
+      const t100 = document.getElementById('toggle-100');
+      const t200 = document.getElementById('toggle-200');
+      t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); applyPrefFilter(); });
+      t200.addEventListener('change', () => { if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200); applyPrefFilter(); });
+
+      // 都道府縣圖層（高亮＋篩選）
+      const prefSelect = document.getElementById('pref-select');
+      const prefClearBtn = document.getElementById('pref-clear');
+      const prefPane = map.createPane('prefPane'); prefPane.style.zIndex = 500;
+
+      let prefLayer = null, selectedPrefName = "", selectedFeature = null;
+      const prefStyle = { color:"#666", weight:1, fillOpacity:0, pane:'prefPane' };
+      const prefHoverStyle = { weight:2, color:"#111" };
+      const prefSelectedStyle = { color:"#0b6efd", weight:3, fillColor:"#0b6efd", fillOpacity:0.08 };
+
+      fetch(PREF_GEOJSON_URL).then(r => r.json()).then(geo => {
+        const names = collectPrefNames(geo).sort((a,b)=>a.localeCompare(b,'ja'));
+        names.forEach(n => { const opt = document.createElement('option'); opt.value=n; opt.textContent=n; prefSelect.appendChild(opt); });
+        prefSelect.disabled = false; prefClearBtn.disabled = false;
+
+        prefLayer = L.geoJSON(geo, {
+          pane: 'prefPane',
+          style: prefStyle,
+          onEachFeature: (feature, layer) => {
+            const name = getPrefName(feature); if (!name) return;
+            layer.on('mouseover', () => layer.setStyle(prefHoverStyle));
+            layer.on('mouseout', () => { if (selectedFeature === layer) return; layer.setStyle(prefStyle); });
+            layer.on('click', () => {
+              if (selectedFeature && selectedFeature !== layer) selectedFeature.setStyle(prefStyle);
+              selectedFeature = layer; layer.setStyle(prefSelectedStyle);
+              prefSelect.value = name; selectedPrefName = normalizePref(name); applyPrefFilter();
+              try { map.fitBounds(layer.getBounds(), { maxZoom: 8, padding:[20,20] }); } catch(e){}
+            });
+          }
+        }).addTo(map);
+      });
+
+      prefSelect.addEventListener('change', () => {
+        const n = prefSelect.value;
+        if (selectedFeature) { selectedFeature.setStyle(prefStyle); selectedFeature = null; }
+        if (!n) { selectedPrefName=""; applyPrefFilter(); return; }
+        selectedPrefName = normalizePref(n); applyPrefFilter();
+        if (prefLayer) {
+          prefLayer.eachLayer(l => {
+            const lname = getPrefName(l.feature);
+            if (lname === n) {
+              selectedFeature = l; l.setStyle(prefSelectedStyle);
+              try { map.fitBounds(l.getBounds(), { maxZoom: 8, padding:[20,20] }); } catch(e){}
+            }
+          });
+        }
+      });
+
+      prefClearBtn.addEventListener('click', () => {
+        prefSelect.value = ""; selectedPrefName = "";
+        if (selectedFeature) { selectedFeature.setStyle(prefStyle); selectedFeature = null; }
+        applyPrefFilter();
+      });
+
+      function applyPrefFilter() {
+        const show100 = t100.checked, show200 = t200.checked;
+        markers.forEach(({ series, meta, marker }) => {
+          const seriesOk = (series === "100" && show100) || (series !== "100" && show200);
+          const prefOk = !selectedPrefName || normalizePref(meta.prefecture || "") === selectedPrefName;
+          if (seriesOk && prefOk) {
+            if (series === "100") layer100.addLayer(marker); else layer200.addLayer(marker);
+          } else {
+            if (series === "100") layer100.removeLayer(marker); else layer200.removeLayer(marker);
+          }
+        });
+      }
+
+      // 工具：GeoJSON 外環、縣名、名稱正規化
+      function collectOuterRings(geojson) {
+        const rings = [], feats = geojson.type === "FeatureCollection"
+          ? geojson.features : geojson.type === "Feature" ? [geojson] : [{ type:"Feature", geometry: geojson }];
+        for (const f of feats) {
+          const g = f.geometry; if (!g) continue;
+          if (g.type === "Polygon") { if (g.coordinates && g.coordinates[0]) rings.push(normalizeRing(g.coordinates[0])); }
+          else if (g.type === "MultiPolygon") { for (const poly of g.coordinates || []) { if (poly && poly[0]) rings.push(normalizeRing(poly[0])); } }
+        }
+        return rings;
+      }
+      function normalizeRing(ring) { if (!ring || ring.length===0) return ring; const a=ring[0], b=ring[ring.length-1]; return (a[0]!==b[0]||a[1]!==b[1])?[...ring,a]:ring; }
+      function getPrefName(f) { return f?.properties?.name_ja || f?.properties?.nam_ja || f?.properties?.NAME_JA || f?.properties?.name || ""; }
+      function collectPrefNames(geojson) {
+        const feats = geojson.type === "FeatureCollection" ? geojson.features : geojson.type === "Feature" ? [geojson] : [];
+        const set = new Set(); feats.forEach(f => { const n=getPrefName(f); if (n) set.add(n); }); return Array.from(set);
+      }
+      function normalizePref(s) {
+        return String(s||"").replace(/\s+/g,"").replace(/[都道府県]$/u,"")
+          .replace(/(東京都|北海道|京都府|大阪府)$/u, m => (m==="東京都"?"東京":m==="北海道"?"北海道":m==="京都府"?"京都":"大阪"));
+      }
+    </script>
+  </body>
+</html>
