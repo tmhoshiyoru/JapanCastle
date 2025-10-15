@@ -1,7 +1,48 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>日本百大名城地圖（測試）</title>
-<h1>網站上線囉！</h1>
-<p>之後我們會把地圖加進來。</p>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>日本百大名城・續百大名城地圖</title>
+<!-- Leaflet CSS -->
+<link
+rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+crossorigin=""
+/>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<header class="topbar">
+<h1>日本百大名城・續百大名城地圖</h1>
+<div class="legend">
+<span class="dot dot-100" title="百名城"></span> 百名城
+<span class="dot dot-200" title="續百名城"></span> 續百名城
+</div>
+</header>
+
+
+<main>
+<div id="map"></div>
+<div id="layer-toggle" class="layer-toggle">
+<label><input type="checkbox" id="toggle-100" checked> 百名城</label>
+<label><input type="checkbox" id="toggle-200" checked> 續百名城</label>
+</div>
+</main>
+
+
+<footer class="foot">
+地圖資料 © OpenStreetMap 貢獻者 ｜ Tiles by OSM ｜ Powered by Leaflet
+</footer>
+
+
+<!-- Leaflet JS -->
+<script
+src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+crossorigin=""
+></script>
+<script src="./app.js"></script>
+</body>
+</html>
