@@ -226,15 +226,45 @@
         return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       }
 
-      fetch(DATA_URL).then(r => r.json()).then(data => {
-        data.forEach(item => {
-          const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-                     .bindPopup(popupHTML(item));
-          (item.series === "100" ? layer100 : layer200).addLayer(m);
-          markers.push({ id: item.id, series: item.series, meta: item, marker: m });
-        });
-      }).catch(err => { console.error(err); alert("載入資料失敗：" + err.message); });
+      function parseLenientJSON(txt) {
+  // 去掉 UTF-8 BOM
+  txt = txt.replace(/^\uFEFF/, '');
+  // 移除 // 與 /* */ 註解
+  txt = txt.replace(/\/\/[^\n\r]*|\/\*[\s\S]*?\*\//g, '');
+  // 把可能出現的單引號 key/value 換成雙引號（盡量保守：只處理 "key": 和 value 是純字串的情況）
+  // 1) 屬性名 'foo': → "foo":
+  txt = txt.replace(/'([\w\-]+)'\s*:/g, '"$1":');
+  // 2) 值為 'xxx' → "xxx"（避免把 JSON 內部的全形引號等搞壞）
+  txt = txt.replace(/:\s*'([^']*)'/g, ':"$1"');
+  // 移除陣列或物件尾端多餘逗點： {...,} 或 [...,]
+  txt = txt.replace(/,\s*([}\]])/g, '$1');
+  return JSON.parse(txt);
+}
 
+fetch(DATA_URL)
+  .then(r => {
+    if (!r.ok) throw new Error('找不到 data/castles.json（請確認路徑與檔名大小寫）');
+    return r.text();
+  })
+  .then(txt => {
+    let data;
+    try {
+      data = JSON.parse(txt);             // 先試標準 JSON
+    } catch (e) {
+      data = parseLenientJSON(txt);       // 不行就用「容錯解析」
+    }
+
+    data.forEach(item => {
+      const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
+                 .bindPopup(popupHTML(item));
+      (item.series === "100" ? layer100 : layer200).addLayer(m);
+      markers.push({ id: item.id, series: item.series, meta: item, marker: m });
+    });
+  })
+  .catch(err => {
+    console.error(err);
+    alert('載入資料失敗：' + err.message);
+  });
       // 百/續切換
       const t100 = document.getElementById('toggle-100');
       const t200 = document.getElementById('toggle-200');
