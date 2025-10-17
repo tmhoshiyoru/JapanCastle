@@ -1,58 +1,22 @@
 [
   {
     "id": "jp-001",
-    "series": "100",                     // "100" or "続100"（建議用 "100" / "200" 兩類）
-    "number": 62,                         // 編號（數字）
-    "name_zh": "姬路城",                  // 中文名稱
-    "name_ja": "姫路城",                  // 日文名稱
-    "name_en": "Himeji Castle",           // 英文名稱
+    "series": "100",
+    "number": 62,
+    "name_zh": "姬路城",
+    "name_ja": "姫路城",
+    "name_en": "Himeji Castle",
     "lat": 34.8394,
     "lng": 134.6939,
-    "prefecture": "兵庫県", 
+    "prefecture": "兵庫県",
     "official_url": "https://www.city.himeji.lg.jp/castle/",
-    "stamp": {                            // 集章資訊（可選）
-      "place": "姬路城大手門售票口旁服務中心",
-      "hours": "09:00–17:00（最晚入場16:00）",
-      "notes": "可能有臨時調整，建議先看官網",
-      "url": "https://www.city.himeji.lg.jp/castle/"
-    },
-    "goshuin": {                          // 御城印資訊（可選）
-      "available": true,
-      "price_yen": 300,
-      "place": "三之丸廣場觀光案內所",
-      "hours": "09:00–17:00",
-      "notes": "節慶可能推出限定版"
-    },
-    "photos": [                            // 照片（可多張，可外鏈或站內路徑）
-      {
-        "src": "./images/castles/jp-001/main.jpg",
-        "caption": "姬路城天守",
-        "credit": "YourName",
-        "license": "CC BY 4.0"
-      }
-    ]
+    "stamp": { "place": "", "hours": "", "notes": "", "url": "" },
+    "goshuin": { "available": true, "price_yen": 300, "place": "", "hours": "", "notes": "" },
+    "photos": []
   },
   {
     "id": "jp-002",
-    "series": "100",
-    "number": 44,
-    "name_zh": "松本城",
-    "name_ja": "松本城",
-    "name_en": "Matsumoto Castle",
-    "lat": 36.2381,
-    "lng": 137.9707,
-    "prefecture": "長野県",
-    "official_url": "https://www.matsumoto-castle.jp/",
-    "stamp": { "place": "黑門售票處", "hours": "08:30–17:00" },
-    "goshuin": { "available": true, "price_yen": 300 },
-    "photos": [
-      { "src": "./images/castles/jp-002/main.jpg", "caption": "松本城外觀" },
-      { "src": "https://example.com/matsumoto-keep.jpg", "caption": "天守近景" }
-    ]
-  },
-  {
-    "id": "jp-101",
-    "series": "200",                      // 續百大 → 用 "200"
+    "series": "200",
     "number": 1,
     "name_zh": "福岡城",
     "name_ja": "福岡城",
@@ -60,6 +24,9 @@
     "lat": 33.5831,
     "lng": 130.3816,
     "prefecture": "福岡県",
-    "official_url": "https://www.midorimachi.jp/fukuokajyo/"
+    "official_url": "https://www.midorimachi.jp/fukuokajyo/",
+    "stamp": null,
+    "goshuin": { "available": false },
+    "photos": []
   }
 ]
