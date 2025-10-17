@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>日本百大名城・續百大名城地圖</title>
 
+    <!-- Leaflet（jsDelivr） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; font-family: system-ui, -apple-system, "Noto Sans TC", Arial; color: #222; }
@@ -15,25 +17,38 @@
       .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin: 0 4px 0 10px; vertical-align: middle; }
       .dot-100 { background: #0b6efd; }
       .dot-200 { background: #9b59b6; }
-      #map { height: calc(100vh - 160px); position: relative; }
+      #map { height: calc(100vh - 190px); position: relative; }
       .panel {
         position: absolute; right: 12px; top: 70px;
         background: rgba(255,255,255,0.95); border: 1px solid #eee; border-radius: 10px;
         padding: 10px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.06);
-        z-index: 1050; min-width: 240px;
+        z-index: 1050; min-width: 260px;
       }
       .panel .row { margin-top: 10px; }
       .panel label { display: block; margin: 4px 0; }
       .panel select, .panel button { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
-      .foot { padding: 10px 14px; font-size: 12px; color: #666; border-top: 1px solid #eee; background: #fff; }
-      .leaflet-div-icon { background: transparent; border: none; }
-      .marker-100, .marker-200 { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
-      .marker-100 { background: #0b6efd; }
-      .marker-200 { background: #9b59b6; }
+      .stats { display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:13px; margin-top:8px; }
+      .stats .card{border:1px solid #eee; border-radius:8px; padding:8px;}
+      .stats .val{font-weight:700; font-size:16px;}
       .muted { color:#666; font-size:12px; }
 
+      /* 標記（含進度徽記） */
+      .leaflet-div-icon { background: transparent; border: none; }
+      .mk { position: relative; width: 18px; height: 18px; }
+      .dotmk { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+      .dotmk.series-100 { background:#0b6efd; }
+      .dotmk.series-200 { background:#9b59b6; }
+      /* 到訪：綠色外環 */
+      .dotmk.visited { box-shadow: 0 0 0 3px #2ecc71, 0 0 0 1px rgba(0,0,0,.2); }
+      /* 徽記圓點（右下＝集章、右上＝御城印） */
+      .mk .badge-dot { position:absolute; width:6px; height:6px; border-radius:999px; border:2px solid #fff; display:none; }
+      .mk .badge-stamp { right:-2px; bottom:-2px; background:#ff6b6b; }
+      .mk .badge-goshuin { right:-2px; top:-2px; background:#f1c40f; }
+      .mk.show-stamp .badge-stamp { display:block; }
+      .mk.show-goshuin .badge-goshuin { display:block; }
+
       /* Popup 內樣式 */
-      .popup-wrap { max-width: 280px; }
+      .popup-wrap { max-width: 300px; }
       .popup-title { font-weight: 700; }
       .popup-sub { color:#666; font-size:12px; }
       .info-grid { margin: 6px 0; font-size: 13px; }
@@ -41,9 +56,15 @@
       .info-label { display:inline-block; min-width: 64px; color:#555; }
       .thumbs { display:flex; gap:6px; margin-top:8px; overflow-x:auto; }
       .thumbs img { width: 90px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
+      .thumbs:empty { display: none; }
       .badge { display:inline-block; padding:2px 6px; border-radius:6px; font-size:12px; color:#fff; background:#0b6efd; }
       .badge.badge-200 { background:#9b59b6; }
-      .thumbs:empty { display: none; }
+
+      /* 進度切換 UI */
+      .progress-wrap { border-top:1px dashed #eee; margin-top:8px; padding-top:8px; }
+      .progress-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+      .toggle-chip{ border:1px solid #ddd; border-radius:999px; padding:6px 8px; text-align:center; cursor:pointer; user-select:none; font-size:12px; }
+      .toggle-chip.on{ background:#2ecc71; color:#fff; border-color:#2ecc71; }
     </style>
   </head>
   <body>
@@ -80,6 +101,32 @@
           <div class="muted">可直接點地圖上的縣界高亮與篩選</div>
           <div class="row"><button id="pref-clear" disabled>清除縣界篩選</button></div>
         </div>
+
+        <!-- 我的進度：統計 -->
+        <div class="row">
+          <div class="muted">我的進度</div>
+          <div class="stats">
+            <div class="card">
+              <div class="muted">總數</div>
+              <div class="val" id="stat-total">0</div>
+            </div>
+            <div class="card">
+              <div class="muted">到訪</div>
+              <div class="val" id="stat-visited">0</div>
+              <div class="muted" id="pct-visited">0%</div>
+            </div>
+            <div class="card">
+              <div class="muted">集章</div>
+              <div class="val" id="stat-stamped">0</div>
+              <div class="muted" id="pct-stamped">0%</div>
+            </div>
+            <div class="card">
+              <div class="muted">御城印</div>
+              <div class="val" id="stat-goshuin">0</div>
+              <div class="muted" id="pct-goshuin">0%</div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -95,8 +142,16 @@
       const JP_BOUNDARY_URL = "./data/japan-boundary.geojson";
       const PREF_GEOJSON_URL = "./data/jp-prefectures.geojson";
 
+      // 照片旗標（目前先不顯示）
+      const SHOW_PHOTOS = false;
+
+      // localStorage key
+      const LS_PROGRESS_KEY = "castleProgress.v1";
+
+      // 邊界
       const JP_BOUNDS = L.latLngBounds([22, 122], [47.5, 158]);
 
+      // 地圖
       const map = L.map("map", { zoomControl: true, worldCopyJump: false })
                    .setView([MAP_INIT.lat, MAP_INIT.lng], MAP_INIT.zoom);
       map.setMinZoom(5);
@@ -109,15 +164,11 @@
       }).addTo(map);
 
       // 遮罩 pane
-      const maskPane = map.createPane('maskPane');
-      maskPane.style.zIndex = 350;
-      maskPane.style.pointerEvents = 'none';
-
-      // 海色選單
       const seaSelect = document.getElementById('sea-color');
+      const maskPane = map.createPane('maskPane');
+      maskPane.style.zIndex = 350; maskPane.style.pointerEvents = 'none';
       let maskLayer = null;
 
-      // 外海遮罩（沿邊界挖洞）
       fetch(JP_BOUNDARY_URL).then(r => r.json()).then(geo => {
         const holes = collectOuterRings(geo);
         const worldRing = [[-180,-90],[-180,90],[180,90],[180,-90],[-180,-90]];
@@ -129,95 +180,127 @@
         }).addTo(map);
         seaSelect.disabled = false;
       });
+      seaSelect.addEventListener('change', () => { if (maskLayer) maskLayer.setStyle({ fillColor: seaSelect.value }); });
 
-      seaSelect.addEventListener('change', () => {
-        if (maskLayer) maskLayer.setStyle({ fillColor: seaSelect.value });
-      });
+      // ===== 進度儲存 =====
+      function loadProgress() {
+        try { return JSON.parse(localStorage.getItem(LS_PROGRESS_KEY) || "{}"); }
+        catch { return {}; }
+      }
+      function saveProgress(obj) { localStorage.setItem(LS_PROGRESS_KEY, JSON.stringify(obj)); }
+      function getProgress(id) {
+        const p = progress[id] || {};
+        return { visited: !!p.visited, stamped: !!p.stamped, goshuin: !!p.goshuin };
+      }
+      let progress = loadProgress();
 
       // ===== 名城點位 =====
       const layer100 = L.layerGroup().addTo(map);
       const layer200 = L.layerGroup().addTo(map);
-      const markers = [];
+      const markers = []; // { id, series, meta, marker }
 
-      function dotIcon(series) {
-        const cls = series === "100" ? "marker-100" : "marker-200";
+      function mkHtml(series, prog) {
+        const v = prog.visited ? "visited" : "";
+        const s = prog.stamped ? "show-stamp" : "";
+        const g = prog.goshuin ? "show-goshuin" : "";
+        return `<div class="mk ${s} ${g}">
+                  <div class="dotmk series-${series} ${v}"></div>
+                  <span class="badge-dot badge-stamp"></span>
+                  <span class="badge-dot badge-goshuin"></span>
+                </div>`;
+      }
+      function dotIcon(series, prog) {
         return L.divIcon({
-          className: `leaflet-div-icon ${cls}`,
-          html: `<div class="${cls}"></div>`,
-          iconSize: [18,18], iconAnchor: [9,9]
+          className: "leaflet-div-icon",
+          html: mkHtml(series, prog),
+          iconSize: [18,18],
+          iconAnchor: [9,9]
         });
       }
-      // 僅接受 https 或站內相對路徑；其餘（http/空字串）略過，避免 mixed content
+      function updateMarkerIcon(rec) {
+        const prog = getProgress(rec.id);
+        rec.marker.setIcon(dotIcon(rec.series, prog));
+      }
+
+      // --- 安全處理圖片（保留之前的函式以備未來開啟） ---
       function safeImgSrc(src) {
         if (!src) return "";
         if (src.startsWith("https://")) return src;
         if (src.startsWith("./") || src.startsWith("/")) return src;
-        return ""; // 不安全或不支援的來源
+        return "";
       }
-      // 照片清單清理：移除無效/重複/空白
       function sanitizePhotos(arr) {
         if (!Array.isArray(arr)) return [];
-        const seen = new Set();
-        const out = [];
+        const seen = new Set(), out = [];
         for (const p of arr) {
-          const s = safeImgSrc(p?.src);
-          if (!s || seen.has(s)) continue;
-          seen.add(s);
-          out.push({ src: s, caption: p?.caption || "" });
+          const s = safeImgSrc(p?.src); if (!s || seen.has(s)) continue;
+          seen.add(s); out.push({ src: s, caption: p?.caption || "" });
         }
-        return out.slice(0, 6); // 最多保留 6 張以防太多
+        return out.slice(0, 6);
       }
+
       function popupHTML(item) {
         const seriesTag = item.series === "100" ? "百名城" : "續百名城";
         const seriesBadge = `<span class="badge ${item.series === "100" ? "" : "badge-200"}">${seriesTag}${item.number ? " #" + item.number : ""}</span>`;
         const nmzh = item.name_zh ? `<div class="popup-title">${item.name_zh} ${seriesBadge}</div>` : `<div class="popup-title">${item.name_ja || item.name_en || ""} ${seriesBadge}</div>`;
-        const sub = [
-          item.name_ja ? `日：${item.name_ja}` : "",
-          item.name_en ? `EN：${item.name_en}` : ""
-        ].filter(Boolean).join("　");
+        const sub = [ item.name_ja ? `日：${item.name_ja}` : "", item.name_en ? `EN：${item.name_en}` : "" ].filter(Boolean).join("　");
 
         const rows = [];
         if (item.prefecture) rows.push(row("都道府縣", item.prefecture));
         if (item.official_url) rows.push(row("官方網站", `<a href="${item.official_url}" target="_blank" rel="noopener">前往網站</a>`));
 
-        // 集章
         if (item.stamp && (item.stamp.place || item.stamp.hours || item.stamp.notes || item.stamp.url)) {
           rows.push(`<div class="info-row"><span class="info-label">集章</span><span>${[
             item.stamp.place, item.stamp.hours, item.stamp.notes
           ].filter(Boolean).join("｜")} ${item.stamp.url ? `｜<a href="${item.stamp.url}" target="_blank" rel="noopener">資訊</a>` : ""}</span></div>`);
         }
-        // 御城印
         if (item.goshuin && (item.goshuin.available || item.goshuin.place || item.goshuin.price_yen || item.goshuin.hours || item.goshuin.notes)) {
           const avail = item.goshuin.available === false ? "（可能無販售）" : "";
           const price = item.goshuin.price_yen ? `￥${item.goshuin.price_yen}` : "";
           rows.push(`<div class="info-row"><span class="info-label">御城印</span><span>${[avail, item.goshuin.place, price, item.goshuin.hours, item.goshuin.notes].filter(Boolean).join("｜")}</span></div>`);
         }
 
-       // 照片縮圖（安全處理：沒圖就不顯示、有壞圖自動移除）
+        // 照片（目前依 SHOW_PHOTOS 決定是否顯示）
         let thumbs = "";
-        const cleanPhotos = sanitizePhotos(item.photos);
-        if (cleanPhotos.length > 0) {
-          thumbs = `<div class="thumbs">` + cleanPhotos.slice(0, 3).map(p => {
-            const cap = p.caption ? ` title="${escapeHtml(p.caption)}"` : "";
-            // onerror 移除壞圖；referrerpolicy 避免某些站點擋引用
-            return `<a href="${p.src}" target="_blank" rel="noopener">
-                      <img loading="lazy" referrerpolicy="no-referrer" src="${p.src}" alt="${escapeHtml(item.name_zh || item.name_ja || item.name_en || "")}" ${cap}
-                           onerror="this.remove()">
-                    </a>`;
-          }).join("") + `</div>`;
+        if (SHOW_PHOTOS) {
+          const cleanPhotos = sanitizePhotos(item.photos);
+          if (cleanPhotos.length > 0) {
+            thumbs = `<div class="thumbs">` + cleanPhotos.slice(0, 3).map(p => {
+              const cap = p.caption ? ` title="${escapeHtml(p.caption)}"` : "";
+              return `<a href="${p.src}" target="_blank" rel="noopener">
+                        <img loading="lazy" referrerpolicy="no-referrer"
+                             src="${p.src}"
+                             alt="${escapeHtml(item.name_zh || item.name_ja || item.name_en || "")}" ${cap}
+                             onerror="this.remove()">
+                      </a>`;
+            }).join("") + `</div>`;
+          }
         }
+
+        // 進度切換 UI
+        const id = ensureId(item);
+        const p = getProgress(id);
+        const chips = `
+          <div class="progress-wrap">
+            <div class="muted">我的進度</div>
+            <div class="progress-grid">
+              <div class="toggle-chip ${p.visited ? 'on':''}" data-id="${id}" data-k="visited">到訪</div>
+              <div class="toggle-chip ${p.stamped ? 'on':''}" data-id="${id}" data-k="stamped">集章</div>
+              <div class="toggle-chip ${p.goshuin ? 'on':''}" data-id="${id}" data-k="goshuin">御城印</div>
+            </div>
+          </div>
+        `;
 
         return `
           <div class="popup-wrap">
             ${nmzh}
             ${sub ? `<div class="popup-sub">${sub}</div>` : ""}
-            <div class="info-grid">
-              ${rows.join("")}
-            </div>
+            <div class="info-grid">${rows.join("")}</div>
             ${thumbs}
+            ${chips}
           </div>
         `;
-      } 
+      }
 
       function row(label, valueHtml) {
         return `<div class="info-row"><span class="info-label">${label}</span><span>${valueHtml}</span></div>`;
@@ -226,98 +309,52 @@
         return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       }
 
-      // === 取代你原本的 fetch(DATA_URL)... 這段 ===
-function parseLenientJSON(txt) {
-  // 去掉 UTF-8 BOM
-  txt = txt.replace(/^\uFEFF/, '');
-  // 移除 // 與 /* */ 註解
-  txt = txt.replace(/\/\/[^\n\r]*|\/\*[\s\S]*?\*\//g, '');
-  // 單引號 → 雙引號（屬性名與純字串值；盡量保守）
-  txt = txt.replace(/'([\w\-]+)'\s*:/g, '"$1":');   // 'key': → "key":
-  txt = txt.replace(/:\s*'([^']*)'/g, ':"$1"');     // : 'value' → : "value"
-  // 移除尾逗點
-  txt = txt.replace(/,\s*([}\]])/g, '$1');
-  // 在「字串內」處理控制字元與不合法跳脫
-  txt = escapeControlCharsInStrings(txt);
-  return JSON.parse(txt);
-}
+      // 載入資料並建標記
+      fetch(DATA_URL).then(r => r.json()).then(data => {
+        // 總數統計
+        totalCount = data.length;
+        updateStats();
 
-// 把「字串內」的控制字元（0x00–0x1F）改成合法跳脫；
-// 若遇到不合法的 \x（x 不是 " \ / b f n r t u 之一），改成 \\x
-function escapeControlCharsInStrings(s) {
-  let out = '', inStr = false, esc = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (!inStr) {
-      if (ch === '"') { inStr = true; }
-      out += ch;
-    } else {
-      if (esc) {
-        const valid = '"\\/bfnrtu';
-        if (valid.indexOf(ch) === -1) {
-          // 不合法跳脫 → 轉成兩個反斜線，保留原字元
-          out += '\\' + ch;
-        } else {
-          out += ch;
-        }
-        esc = false;
-      } else if (ch === '\\') {
-        esc = true;
-        out += ch;
-      } else if (ch === '"') {
-        inStr = false;
-        out += ch;
-      } else {
-        const code = ch.charCodeAt(0);
-        if (code <= 0x1F) {
-          // 控制字元 → 合法跳脫
-          if (ch === '\n') out += '\\n';
-          else if (ch === '\r') out += '\\r';
-          else if (ch === '\t') out += '\\t';
-          else if (code === 0x08) out += '\\b';
-          else if (code === 0x0C) out += '\\f';
-          else out += '\\u' + code.toString(16).padStart(4, '0');
-        } else {
-          out += ch;
-        }
-      }
-    }
-  }
-  return out;
-}
+        data.forEach(item => {
+          const id = ensureId(item);
+          const prog = getProgress(id);
+          const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series, prog) })
+                     .bindPopup(popupHTML(item));
+          (item.series === "100" ? layer100 : layer200).addLayer(m);
+          const rec = { id, series: item.series, meta: item, marker: m };
+          markers.push(rec);
+        });
+      }).catch(err => { console.error(err); alert("載入資料失敗：" + err.message); });
 
-fetch(DATA_URL)
-  .then(r => {
-    if (!r.ok) throw new Error('找不到 data/castles.json（請確認路徑與檔名大小寫）');
-    return r.text();
-  })
-  .then(txt => {
-    let data;
-    try {
-      data = JSON.parse(txt);           // 先試標準 JSON
-    } catch (e) {
-      data = parseLenientJSON(txt);     // 不行就用寬鬆解析
-    }
+      // 彈窗開啟時，綁定進度按鈕事件
+      map.on('popupopen', (e) => {
+        const el = e.popup.getElement();
+        if (!el) return;
+        el.querySelectorAll('.toggle-chip').forEach(chip => {
+          chip.addEventListener('click', () => {
+            const id = chip.getAttribute('data-id');
+            const k = chip.getAttribute('data-k'); // visited/stamped/goshuin
+            const cur = progress[id]?.[k] ? true : false;
+            progress[id] = { ...getProgress(id), [k]: !cur, updated: Date.now() };
+            saveProgress(progress);
+            // 切換外觀
+            chip.classList.toggle('on');
+            // 更新對應 marker
+            const rec = markers.find(m => m.id === id);
+            if (rec) updateMarkerIcon(rec);
+            // 更新統計
+            updateStats();
+          });
+        });
+      });
 
-    data.forEach(item => {
-      const m = L.marker([item.lat, item.lng], { icon: dotIcon(item.series) })
-                 .bindPopup(popupHTML(item));
-      (item.series === "100" ? layer100 : layer200).addLayer(m);
-      markers.push({ id: item.id, series: item.series, meta: item, marker: m });
-    });
-  })
-  .catch(err => {
-    console.error(err);
-    alert('載入資料失敗：' + err.message);
-  });
-      
-      // 百/續切換
+      // 百/續切換（與縣界篩選一樣保留）
       const t100 = document.getElementById('toggle-100');
       const t200 = document.getElementById('toggle-200');
       t100.addEventListener('change', () => { if (t100.checked) layer100.addTo(map); else map.removeLayer(layer100); applyPrefFilter(); });
       t200.addEventListener('change', () => { if (t200.checked) layer200.addTo(map); else map.removeLayer(layer200); applyPrefFilter(); });
 
-      // 都道府縣圖層（高亮＋篩選）
+      // ===== 都道府縣圖層（高亮＋篩選） =====
       const prefSelect = document.getElementById('pref-select');
       const prefClearBtn = document.getElementById('pref-clear');
       const prefPane = map.createPane('prefPane'); prefPane.style.zIndex = 500;
@@ -384,7 +421,30 @@ fetch(DATA_URL)
         });
       }
 
-      // 工具：GeoJSON 外環、縣名、名稱正規化
+      // ====== 統計 ======
+      let totalCount = 0;
+      function updateStats() {
+        // 如果尚未載入城數，先算一次（也可在載入時設定）
+        if (!totalCount) totalCount = markers.length || 0;
+        const vals = { visited:0, stamped:0, goshuin:0 };
+        for (const id in progress) {
+          if (progress[id]?.visited) vals.visited++;
+          if (progress[id]?.stamped) vals.stamped++;
+          if (progress[id]?.goshuin) vals.goshuin++;
+        }
+        // DOM
+        qs('#stat-total').textContent = String(totalCount);
+        qs('#stat-visited').textContent = String(vals.visited);
+        qs('#stat-stamped').textContent = String(vals.stamped);
+        qs('#stat-goshuin').textContent = String(vals.goshuin);
+        qs('#pct-visited').textContent = pct(vals.visited, totalCount);
+        qs('#pct-stamped').textContent = pct(vals.stamped, totalCount);
+        qs('#pct-goshuin').textContent = pct(vals.goshuin, totalCount);
+      }
+      function pct(x, n) { if (!n) return "0%"; const p = Math.round((x/n)*100); return p + "%"; }
+      function qs(sel){ return document.querySelector(sel); }
+
+      // ===== 工具：GeoJSON 外環、縣名、名稱正規化、ID 保險 =====
       function collectOuterRings(geojson) {
         const rings = [], feats = geojson.type === "FeatureCollection"
           ? geojson.features : geojson.type === "Feature" ? [geojson] : [{ type:"Feature", geometry: geojson }];
@@ -404,6 +464,12 @@ fetch(DATA_URL)
       function normalizePref(s) {
         return String(s||"").replace(/\s+/g,"").replace(/[都道府県]$/u,"")
           .replace(/(東京都|北海道|京都府|大阪府)$/u, m => (m==="東京都"?"東京":m==="北海道"?"北海道":m==="京都府"?"京都":"大阪"));
+      }
+      function ensureId(item) {
+        if (item.id) return item.id;
+        // 後備方案：用 series+number 或座標組合
+        if (item.series && (item.number || item.number===0)) return `${item.series}-${item.number}`;
+        return `loc-${item.lat},${item.lng}`;
       }
     </script>
   </body>
